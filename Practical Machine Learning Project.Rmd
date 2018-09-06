@@ -1,0 +1,116 @@
+---
+title: "Practical Machine Learning Project"
+output: html_document
+---
+
+## Introduction
+In this project we are using data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to create a model to predict the manner in which they did the exercise.
+
+## Data Analysis
+We first loaded the necessary R packages and data into R and perform a basic exploratory analysis in order to understand the dataset. The dataset consists of 19622 observations of 160 variables. Approximately 41% of observations are NAs and there are a lot of variables with near zero variance. We have removed the variables that contain more than 95% of NA values and variables with near zerio variance. We split the training data into two groups with the ratio 60/40 for training and testing the data and we removed the first five columns as these were identification columns only.
+
+```{r}
+library(caret)
+library(kernlab)
+library(corrplot)
+library(parallel)
+library(doParallel)
+
+setwd("/Users/Jana/Documents/Data Analysis/R Programming Exercises/Practical Machine Learning/")
+training <- read.csv("pml-training.csv")
+validation <- read.csv("pml-testing.csv")
+
+# Exploratory data analysis
+str(training) # There are 19'622 observations of 160 variables
+mean(is.na(training)) # cca 41% of data are NA
+
+# Data cleaning. First, we will replace all missing values by the mean of the 
+
+# Partitioning train data into train and test datasets
+inTrain = createDataPartition(training$classe, p = 0.6, list = FALSE)
+training = training[inTrain, ]
+testing = training[-inTrain, ]
+dim(training); dim(testing)
+
+mean(is.na(training)) # cca 41% of obs are NA
+mean(is.na(testing)) # cca 41% of obs are NA
+
+# remove variables with Nearly Zero Variance
+NZV <- nearZeroVar(training)
+training <- training[, -NZV]
+testing  <- testing[, -NZV]
+dim(training); dim(testing)
+
+# remove variables that are mostly NA
+NAs <- sapply(training, function(x) mean(is.na(x))) > 0.95
+training <- training[, NAs == FALSE]
+testing  <- testing[, NAs == FALSE]
+dim(training); dim(testing)
+
+mean(is.na(training)) # there are no NAs in the train set
+mean(is.na(testing)) # there are no NAs in the test set
+
+# remove identification only variables (columns 1 to 5)
+training <- training[, -(1:5)]
+testing <- testing[, -(1:5)]
+```
+
+## Preprocessing with Principal Components Analysis
+There are a lot of variables in the training dataset, therefore we wanted to understand whether there are any
+that we can eliminate. We plot the correlation of the individual variables, however the plot shows there are no variables that are highly correlated and therefore we did not pre-process the data with PCA.
+
+```{r}
+colnames(training)
+
+# Visualize correlation
+M <- cor(training[, -54])
+corrplot(M, order = "FPC", method="color", tl.cex = 0.8, tl.col = rgb(0, 0, 0))
+```
+
+## Building the prediction model
+We decided to use Random Forest method to train the model with parallel processing in order to improve system performance. A cross-validation was used.
+
+```{r}
+# Prediction Models
+
+# Random Forest
+set.seed(111)
+
+# Step 1: Configure parallel processing
+cluster <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
+registerDoParallel(cluster)
+
+# Step 2: Configure trainControl object
+fitControl <- trainControl(method = "cv",
+                           number = 5,
+                           allowParallel = TRUE)
+
+# Step 3: Develop training model
+fitRF <- train(classe ~ ., method = "rf", data = training, trControl = fitControl)
+
+# Step 4: De-register parallel processing cluster
+stopCluster(cluster)
+registerDoSEQ()
+
+fitRF
+fitRF$resample
+confusionMatrix.train(fitRF)
+```
+
+## Model accuracy
+The accuracy of our model is 99% and we will therefore continue with the testing and validation.
+
+## Testing
+```{r}
+predictRF <- predict(fitRF, newdata = testing)
+confusionMatrix(predictRF, testing$classe)
+```
+
+## Validation
+```{r}
+validationRF <- predict(fitRF, newdata = validation)
+validationRF
+```
+
+
+
